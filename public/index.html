@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dance Imposter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to right, #ffecd2, #fcb69f);
+      text-align: center;
+      padding: 5vw;
+    }
+    h1 { font-size: 6vw; margin-bottom: 20px; }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      max-width: 400px;
+      margin: auto;
+    }
+    input, button {
+      padding: 12px;
+      font-size: 1.2rem;
+      border: none;
+      border-radius: 5px;
+      width: 100%;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    button {
+      background-color: #ff6f61;
+      color: white;
+      cursor: pointer;
+    }
+    #groupOptions, #groupForm, #groupUI {
+      margin-top: 30px;
+    }
+    #groupUI { display: none; }
+    #playButton, #pauseButton { background-color: #4CAF50; margin: 10px; }
+    ul { list-style: none; padding: 0; margin-top: 20px; }
+    li { background: #fff; margin: 5px; padding: 10px; border-radius: 5px; }
+    .dot {
+      height: 15px;
+      width: 15px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 10px;
+    }
+    .green { background-color: green; }
+    .red { background-color: red; }
+  </style>
+</head>
+<body>
+  <h1>🎵 Dance Imposter 🎭</h1>
+
+  <div id="groupOptions">
+    <button id="createBtn">Create Group</button>
+    <button id="joinBtn">Join Group</button>
+  </div>
+
+  <div id="groupForm" style="display: none;">
+    <div class="form-group">
+      <input type="text" id="username" placeholder="Your Name" />
+      <input type="text" id="groupIdInput" placeholder="Group ID" style="display:none;" />
+      <button onclick="submitForm()">Submit</button>
+    </div>
+  </div>
+
+  <div id="groupUI">
+    <h2><span id="showGroupName"></span> Group (<span id="showGroupId"></span>)</h2>
+    <div id="creatorControls" style="display: none;">
+      <button id="playButton" onclick="play()">▶️ Play Song</button>
+      <button id="pauseButton" onclick="togglePause()">⏸️ Pause All</button>
+    </div>
+    <audio id="audioPlayer" autoplay style="display:none;"></audio>
+    <h3>Members</h3>
+    <ul id="members"></ul>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let isCreator = false;
+    let currentGroup = null;
+    let songTypeMap = {};
+    let paused = false;
+    let creatorId = null;
+    let creatorName = '';
+
+    document.getElementById('createBtn').addEventListener('click', () => chooseOption('create'));
+    document.getElementById('joinBtn').addEventListener('click', () => chooseOption('join'));
+
+    function chooseOption(option) {
+      mode = option;
+      document.getElementById('groupOptions').style.display = 'none';
+      document.getElementById('groupForm').style.display = 'block';
+      document.getElementById('groupIdInput').style.display = option === 'join' ? 'block' : 'none';
+    }
+
+    function submitForm() {
+      const username = document.getElementById('username').value;
+      const groupId = document.getElementById('groupIdInput').value;
+      if (!username || (mode === 'join' && !groupId)) {
+        alert('Please fill out all fields.');
+        return;
+      }
+      if (mode === 'create') socket.emit('createGroup', { username });
+      else socket.emit('joinGroup', { groupId, username });
+    }
+
+    socket.on('groupCreated', ({ groupId, isCreator: creator, creatorName: cname }) => {
+      setupGroup(groupId, creator, cname);
+      creatorId = socket.id;
+    });
+
+    socket.on('groupJoined', ({ groupId, isCreator: creator, creatorName: cname }) => {
+      setupGroup(groupId, creator, cname);
+    });
+
+    function setupGroup(groupId, creatorFlag, cname) {
+      isCreator = creatorFlag;
+      creatorName = cname;
+      currentGroup = groupId;
+      document.getElementById('groupForm').style.display = 'none';
+      document.getElementById('groupUI').style.display = 'block';
+      document.getElementById('creatorControls').style.display = isCreator ? 'block' : 'none';
+      document.getElementById('audioPlayer').style.display = isCreator ? 'none' : 'block';
+      document.getElementById('showGroupId').textContent = groupId;
+      document.getElementById('showGroupName').textContent = creatorName;
+    }
+
+    socket.on('updateGroup', (members) => {
+      const list = document.getElementById('members');
+      list.innerHTML = '';
+      members.forEach(member => {
+        if (member.id === socket.id && isCreator) return; // hide self if creator
+        if (member.name === creatorName) return; // hide creator from all
+        const li = document.createElement('li');
+        if (isCreator && songTypeMap[member.id]) {
+          const dot = document.createElement('span');
+          dot.className = 'dot ' + (songTypeMap[member.id] === 'sad' ? 'red' : 'green');
+          li.appendChild(dot);
+        }
+        li.appendChild(document.createTextNode(member.name));
+        list.appendChild(li);
+      });
+    });
+
+    socket.on('songTypes', (map) => {
+      songTypeMap = map;
+      socket.emit('requestGroupMembers', { groupId: currentGroup });
+    });
+
+    socket.on('startSong', ({ songUrl }) => {
+      if (!isCreator) {
+        const audio = document.getElementById('audioPlayer');
+        audio.src = songUrl;
+        audio.play();
+        paused = false;
+        updatePauseButton();
+      }
+    });
+
+    socket.on('pauseSong', () => {
+      const audio = document.getElementById('audioPlayer');
+      audio.pause();
+      paused = true;
+      updatePauseButton();
+    });
+
+    socket.on('resumeSong', () => {
+      const audio = document.getElementById('audioPlayer');
+      audio.play();
+      paused = false;
+      updatePauseButton();
+    });
+
+    socket.on('pausedStateChanged', (isPaused) => {
+      paused = isPaused;
+      updatePauseButton();
+    });
+
+    socket.on('errorMessage', msg => alert(msg));
+
+    function play() {
+      if (currentGroup && isCreator) socket.emit('playSong', { groupId: currentGroup });
+    }
+
+    function togglePause() {
+      if (currentGroup && isCreator) socket.emit('togglePause', { groupId: currentGroup });
+    }
+
+    function updatePauseButton() {
+      const btn = document.getElementById('pauseButton');
+      btn.textContent = paused ? '▶️ Resume All' : '⏸️ Pause All';
+    }
+  </script>
+</body>
+</html>
