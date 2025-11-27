@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dance Imposter</title>
@@ -10,7 +11,12 @@
       text-align: center;
       padding: 5vw;
     }
-    h1 { font-size: 6vw; margin-bottom: 20px; }
+
+    h1 {
+      font-size: 6vw;
+      margin-bottom: 20px;
+    }
+
     .form-group {
       display: flex;
       flex-direction: column;
@@ -19,26 +25,52 @@
       max-width: 400px;
       margin: auto;
     }
-    input, button {
+
+    input,
+    button {
       padding: 12px;
       font-size: 1.2rem;
       border: none;
       border-radius: 5px;
       width: 100%;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
     }
+
     button {
       background-color: #ff6f61;
       color: white;
       cursor: pointer;
     }
-    #groupOptions, #groupForm, #groupUI {
+
+    #groupOptions,
+    #groupForm,
+    #groupUI {
       margin-top: 30px;
     }
-    #groupUI { display: none; }
-    #playButton, #pauseButton { background-color: #4CAF50; margin: 10px; }
-    ul { list-style: none; padding: 0; margin-top: 20px; }
-    li { background: #fff; margin: 5px; padding: 10px; border-radius: 5px; }
+
+    #groupUI {
+      display: none;
+    }
+
+    #playButton,
+    #pauseButton {
+      background-color: #4CAF50;
+      margin: 10px;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+      margin-top: 20px;
+    }
+
+    li {
+      background: #fff;
+      margin: 5px;
+      padding: 10px;
+      border-radius: 5px;
+    }
+
     .dot {
       height: 15px;
       width: 15px;
@@ -46,10 +78,17 @@
       display: inline-block;
       margin-right: 10px;
     }
-    .green { background-color: green; }
-    .red { background-color: red; }
+
+    .green {
+      background-color: green;
+    }
+
+    .red {
+      background-color: red;
+    }
   </style>
 </head>
+
 <body>
   <h1>🎵 Dance Imposter 🎭</h1>
 
@@ -72,6 +111,7 @@
       <button id="playButton" onclick="play()">▶️ Play Song</button>
       <button id="pauseButton" onclick="togglePause()">⏸️ Pause All</button>
     </div>
+    <button onclick="logout()" style="background-color: #ff4444; margin: 10px;">🚪 Logout</button>
     <audio id="audioPlayer" autoplay style="display:none;"></audio>
     <h3>Members</h3>
     <ul id="members"></ul>
@@ -86,6 +126,30 @@
     let paused = false;
     let creatorId = null;
     let creatorName = '';
+    let currentUsername = '';
+
+    // Check for existing session on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      const session = getSession();
+      if (session) {
+        currentUsername = session.username;
+        socket.emit('reconnect', { groupId: session.groupId, username: session.username });
+      }
+    });
+
+    function getSession() {
+      const sessionData = localStorage.getItem('danceImposterSession');
+      return sessionData ? JSON.parse(sessionData) : null;
+    }
+
+    function saveSession(groupId, username, isCreator, creatorName) {
+      const session = { groupId, username, isCreator, creatorName };
+      localStorage.setItem('danceImposterSession', JSON.stringify(session));
+    }
+
+    function clearSession() {
+      localStorage.removeItem('danceImposterSession');
+    }
 
     document.getElementById('createBtn').addEventListener('click', () => chooseOption('create'));
     document.getElementById('joinBtn').addEventListener('click', () => chooseOption('join'));
@@ -104,17 +168,40 @@
         alert('Please fill out all fields.');
         return;
       }
+      currentUsername = username;
       if (mode === 'create') socket.emit('createGroup', { username });
       else socket.emit('joinGroup', { groupId, username });
     }
 
     socket.on('groupCreated', ({ groupId, isCreator: creator, creatorName: cname }) => {
       setupGroup(groupId, creator, cname);
+      saveSession(groupId, currentUsername, creator, cname);
       creatorId = socket.id;
     });
 
     socket.on('groupJoined', ({ groupId, isCreator: creator, creatorName: cname }) => {
       setupGroup(groupId, creator, cname);
+      saveSession(groupId, currentUsername, creator, cname);
+    });
+
+    socket.on('reconnectSuccess', ({ groupId, isCreator: creator, creatorName: cname, paused: isPaused }) => {
+      setupGroup(groupId, creator, cname);
+      paused = isPaused;
+      updatePauseButton();
+      if (creator) {
+        creatorId = socket.id;
+      }
+    });
+
+    socket.on('reconnectFailed', (message) => {
+      clearSession();
+      alert(message + ' Please create or join a new group.');
+      resetUI();
+    });
+
+    socket.on('logoutSuccess', () => {
+      clearSession();
+      resetUI();
     });
 
     function setupGroup(groupId, creatorFlag, cname) {
@@ -127,6 +214,27 @@
       document.getElementById('audioPlayer').style.display = isCreator ? 'none' : 'block';
       document.getElementById('showGroupId').textContent = groupId;
       document.getElementById('showGroupName').textContent = creatorName;
+    }
+
+    function resetUI() {
+      document.getElementById('groupOptions').style.display = 'block';
+      document.getElementById('groupForm').style.display = 'none';
+      document.getElementById('groupUI').style.display = 'none';
+      document.getElementById('username').value = '';
+      document.getElementById('groupIdInput').value = '';
+      isCreator = false;
+      currentGroup = null;
+      songTypeMap = {};
+      paused = false;
+      creatorId = null;
+      creatorName = '';
+      currentUsername = '';
+    }
+
+    function logout() {
+      if (currentGroup && currentUsername) {
+        socket.emit('logout', { groupId: currentGroup, username: currentUsername });
+      }
     }
 
     socket.on('updateGroup', (members) => {
@@ -196,4 +304,5 @@
     }
   </script>
 </body>
+
 </html>
