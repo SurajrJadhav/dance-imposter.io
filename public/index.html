@@ -245,11 +245,14 @@
         if (member.name === creatorName) return; // hide creator from all
         const li = document.createElement('li');
         if (isCreator && songTypeMap[member.id]) {
+          const songInfo = songTypeMap[member.id];
           const dot = document.createElement('span');
-          dot.className = 'dot ' + (songTypeMap[member.id] === 'sad' ? 'red' : 'green');
+          dot.className = 'dot ' + (songInfo.type === 'sad' ? 'red' : 'green');
           li.appendChild(dot);
+          li.appendChild(document.createTextNode(member.name + ' - ' + songInfo.filename));
+        } else {
+          li.appendChild(document.createTextNode(member.name));
         }
-        li.appendChild(document.createTextNode(member.name));
         list.appendChild(li);
       });
     });

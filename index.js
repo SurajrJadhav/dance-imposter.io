@@ -192,7 +192,7 @@ io.on('connection', (socket) => {
     const members = group.members.filter(m => m.id !== group.creatorId);
     if (members.length < 3) {
       members.forEach(member => {
-        group.songTypes[member.id] = 'dance';
+        group.songTypes[member.id] = { type: 'dance', filename: danceSong };
         io.to(member.id).emit('startSong', { songUrl: `/dance/${danceSong}` });
       });
     } else {
@@ -200,7 +200,7 @@ io.on('connection', (socket) => {
       members.forEach((member, index) => {
         const type = index === imposterIndex ? 'sad' : 'dance';
         const file = type === 'sad' ? sadSong : danceSong;
-        group.songTypes[member.id] = type;
+        group.songTypes[member.id] = { type: type, filename: file };
         io.to(member.id).emit('startSong', { songUrl: `/${type}/${file}` });
       });
     }
